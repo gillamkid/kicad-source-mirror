@@ -323,7 +323,7 @@ private:
      */
     FOOTPRINT* makeFootprint( wxXmlNode* aPackage, const wxString& aPkgName );
 
-    void packageWire( FOOTPRINT* aFootprint, wxXmlNode* aTree ) const;
+    void packageWire( FOOTPRINT* aFootprint, wxXmlNode* aTree, bool aClosedMillingContour = false ) const;
     void packagePad( FOOTPRINT* aFootprint, wxXmlNode* aTree );
     void packageText( FOOTPRINT* aFootprint, wxXmlNode* aTree ) const;
     void packageRectangle( FOOTPRINT* aFootprint, wxXmlNode* aTree ) const;

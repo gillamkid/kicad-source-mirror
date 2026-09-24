@@ -98,6 +98,93 @@ static int parseEagle( const wxString& aDistance )
 }
 
 
+static std::set<wxXmlNode*> closedMillingWireNodes( wxXmlNode* aFirstNode )
+{
+    using NODE_KEY = std::pair<int, int>;
+
+    struct WIRE_NODE
+    {
+        wxXmlNode* node;
+        NODE_KEY   start;
+        NODE_KEY   end;
+        bool       valid;
+    };
+
+    std::vector<WIRE_NODE>                  wires;
+    std::map<NODE_KEY, std::vector<size_t>> adjacency;
+
+    for( wxXmlNode* node = aFirstNode; node; node = node->GetNext() )
+    {
+        if( node->GetName() != wxT( "wire" ) )
+            continue;
+
+        EWIRE wire( node );
+
+        if( wire.layer != EAGLE_LAYER::MILLING )
+            continue;
+
+        NODE_KEY start( wire.x1.ToPcbUnits(), wire.y1.ToPcbUnits() );
+        NODE_KEY end( wire.x2.ToPcbUnits(), wire.y2.ToPcbUnits() );
+        size_t   index = wires.size();
+
+        wires.push_back( { node, start, end, start != end || wire.curve.has_value() } );
+        adjacency[start].push_back( index );
+        adjacency[end].push_back( index );
+    }
+
+    std::set<wxXmlNode*> closedNodes;
+    std::vector<bool>    visited( wires.size(), false );
+
+    for( size_t seed = 0; seed < wires.size(); ++seed )
+    {
+        if( visited[seed] )
+            continue;
+
+        std::vector<size_t>     stack{ seed };
+        std::vector<size_t>     component;
+        std::map<NODE_KEY, int> degree;
+        bool                    valid = true;
+
+        while( !stack.empty() )
+        {
+            size_t index = stack.back();
+            stack.pop_back();
+
+            if( visited[index] )
+                continue;
+
+            visited[index] = true;
+            component.push_back( index );
+            valid = valid && wires[index].valid;
+            degree[wires[index].start]++;
+            degree[wires[index].end]++;
+
+            for( const NODE_KEY& endpoint : { wires[index].start, wires[index].end } )
+            {
+                for( size_t neighbour : adjacency[endpoint] )
+                {
+                    if( !visited[neighbour] )
+                        stack.push_back( neighbour );
+                }
+            }
+        }
+
+        bool closed = valid;
+
+        for( const auto& entry : degree )
+            closed = closed && entry.second == 2;
+
+        if( closed )
+        {
+            for( size_t index : component )
+                closedNodes.insert( wires[index].node );
+        }
+    }
+
+    return closedNodes;
+}
+
+
 // In Eagle one can specify DRC rules where min value > max value,
 // in such case the max value has the priority
 template<typename T>
@@ -773,7 +860,8 @@ void PCB_IO_EAGLE::loadPlain( wxXmlNode* aGraphics )
     m_xpath->push( "plain" );
 
     // Get the first graphic and iterate
-    wxXmlNode* gr = aGraphics->GetChildren();
+    wxXmlNode*           gr = aGraphics->GetChildren();
+    std::set<wxXmlNode*> closedMillingWires = closedMillingWireNodes( gr );
 
     // (polygon | wire | text | circle | rectangle | frame | hole)*
     while( gr )
@@ -788,6 +876,11 @@ void PCB_IO_EAGLE::loadPlain( wxXmlNode* aGraphics )
 
             EWIRE        w( gr );
             PCB_LAYER_ID layer = kicad_layer( w.layer );
+
+            if( w.layer == EAGLE_LAYER::MILLING && layer == Dwgs_User && closedMillingWires.contains( gr ) )
+            {
+                layer = Edge_Cuts;
+            }
 
             VECTOR2I start( kicad_x( w.x1 ), kicad_y( w.y1 ) );
             VECTOR2I end( kicad_x( w.x2 ), kicad_y( w.y2 ) );
@@ -1855,7 +1948,8 @@ FOOTPRINT* PCB_IO_EAGLE::makeFootprint( wxXmlNode* aPackage, const wxString& aPk
     m->SetFPID( fpID );
 
     // Get the first package item and iterate
-    wxXmlNode* packageItem = aPackage->GetChildren();
+    wxXmlNode*           packageItem = aPackage->GetChildren();
+    std::set<wxXmlNode*> closedMillingWires = closedMillingWireNodes( packageItem );
 
     // layer 27 is default layer for tValues
     // set default layer for created footprint
@@ -1872,7 +1966,7 @@ FOOTPRINT* PCB_IO_EAGLE::makeFootprint( wxXmlNode* aPackage, const wxString& aPk
             m->SetLibDescription( descr );
         }
         else if( itemName == wxT( "wire" ) )
-            packageWire( m.get(), packageItem );
+            packageWire( m.get(), packageItem, closedMillingWires.contains( packageItem ) );
         else if( itemName == wxT( "pad" ) )
             packagePad( m.get(), packageItem );
         else if( itemName == wxT( "text" ) )
@@ -1895,13 +1989,16 @@ FOOTPRINT* PCB_IO_EAGLE::makeFootprint( wxXmlNode* aPackage, const wxString& aPk
 }
 
 
-void PCB_IO_EAGLE::packageWire( FOOTPRINT* aFootprint, wxXmlNode* aTree ) const
+void PCB_IO_EAGLE::packageWire( FOOTPRINT* aFootprint, wxXmlNode* aTree, bool aClosedMillingContour ) const
 {
     EWIRE        w( aTree );
     PCB_LAYER_ID layer = kicad_layer( w.layer );
     VECTOR2I     start( kicad_x( w.x1 ), kicad_y( w.y1 ) );
     VECTOR2I     end( kicad_x( w.x2 ), kicad_y( w.y2 ) );
     int          width = w.width.ToPcbUnits();
+
+    if( w.layer == EAGLE_LAYER::MILLING && layer == Dwgs_User && aClosedMillingContour )
+        layer = Edge_Cuts;
 
     if( layer == UNDEFINED_LAYER )
     {
@@ -3028,11 +3125,9 @@ std::tuple<PCB_LAYER_ID, LSET, bool> PCB_IO_EAGLE::defaultKicadLayer( int aEagle
         permittedLayers = LSET( { Edge_Cuts } );
         break;
 
-    // Eagle uses the Milling layer for routed slots and internal board cutouts.
     case EAGLE_LAYER::MILLING:
-        kiLayer         = Edge_Cuts;
-        required        = true;
-        permittedLayers = LSET( { Edge_Cuts } );
+        kiLayer = Dwgs_User;
+        required = false;
         break;
 
     case EAGLE_LAYER::TPLACE:

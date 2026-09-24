@@ -34,6 +34,7 @@
 #include <netinfo.h>
 #include <pcb_text.h>
 #include <pcb_track.h>
+#include <geometry/shape_poly_set.h>
 
 #include <map>
 #include <vector>
@@ -121,10 +122,11 @@ BOOST_AUTO_TEST_CASE( ViaNetAssignment )
 
 
 /**
- * Verify that closed contours on Eagle's Milling layer become footprint graphics 
- * on Edge.Cuts. Milling contours are commonly used for internal routed cutouts.
+ * Verify that closed Eagle Milling wire contours become Edge.Cuts while open milling
+ * toolpaths remain on Dwgs.User with their original widths. Exercise both board-level and
+ * footprint-contained geometry and confirm that the closed contours form board holes.
  */
-BOOST_AUTO_TEST_CASE( FootprintMillingCutout )
+BOOST_AUTO_TEST_CASE( MillingGeometryClassification )
 {
     std::string dataPath = KI_TEST::GetPcbnewTestDataDir()
                            + "plugins/eagle/milling_cutout.brd";
@@ -149,7 +151,10 @@ BOOST_AUTO_TEST_CASE( FootprintMillingCutout )
 
     FOOTPRINT* cutout = board->Footprints().front();
     int        edgeSegmentCount = 0;
+    int        openMillingPathCount = 0;
 
+    // The footprint contains one closed four-segment contour and one open milling path.
+    // Only the closed component should participate in the board outline.
     for( BOARD_ITEM* item : cutout->GraphicalItems() )
     {
         if( item->Type() != PCB_SHAPE_T )
@@ -159,9 +164,46 @@ BOOST_AUTO_TEST_CASE( FootprintMillingCutout )
 
         if( shape->GetLayer() == Edge_Cuts && shape->GetShape() == SHAPE_T::SEGMENT )
             edgeSegmentCount++;
+
+        if( shape->GetLayer() == Dwgs_User && shape->GetShape() == SHAPE_T::SEGMENT )
+        {
+            openMillingPathCount++;
+            BOOST_CHECK_EQUAL( shape->GetWidth(), pcbIUScale.mmToIU( 1 ) );
+        }
     }
 
     BOOST_CHECK_EQUAL( edgeSegmentCount, 4 );
+    BOOST_CHECK_EQUAL( openMillingPathCount, 1 );
+
+    edgeSegmentCount = 0;
+    openMillingPathCount = 0;
+
+    // Repeat the same classification checks for geometry from the board's <plain> section.
+    for( BOARD_ITEM* item : board->Drawings() )
+    {
+        if( item->Type() != PCB_SHAPE_T )
+            continue;
+
+        PCB_SHAPE* shape = static_cast<PCB_SHAPE*>( item );
+
+        if( shape->GetLayer() == Edge_Cuts && shape->GetWidth() == pcbIUScale.mmToIU( 0.1 ) )
+            edgeSegmentCount++;
+
+        if( shape->GetLayer() == Dwgs_User )
+        {
+            openMillingPathCount++;
+            BOOST_CHECK_EQUAL( shape->GetWidth(), pcbIUScale.mmToIU( 1.5 ) );
+        }
+    }
+
+    BOOST_CHECK_EQUAL( edgeSegmentCount, 4 );
+    BOOST_CHECK_EQUAL( openMillingPathCount, 1 );
+
+    // Confirm that both closed contours are interpreted as holes, not merely relayered graphics.
+    SHAPE_POLY_SET boardOutline;
+    BOOST_REQUIRE( board->GetBoardPolygonOutlines( boardOutline, false ) );
+    BOOST_REQUIRE_EQUAL( boardOutline.OutlineCount(), 1 );
+    BOOST_CHECK_EQUAL( boardOutline.HoleCount( 0 ), 2 );
 }
 
 
