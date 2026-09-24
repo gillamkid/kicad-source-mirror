@@ -121,6 +121,51 @@ BOOST_AUTO_TEST_CASE( ViaNetAssignment )
 
 
 /**
+ * Verify that closed contours on Eagle's Milling layer become footprint graphics 
+ * on Edge.Cuts. Milling contours are commonly used for internal routed cutouts.
+ */
+BOOST_AUTO_TEST_CASE( FootprintMillingCutout )
+{
+    std::string dataPath = KI_TEST::GetPcbnewTestDataDir()
+                           + "plugins/eagle/milling_cutout.brd";
+
+    BOOST_REQUIRE_MESSAGE( wxFileName::FileExists( dataPath ),
+                           "Test board file not found: " + dataPath );
+
+    PCB_IO_EAGLE eaglePlugin;
+    std::unique_ptr<BOARD> board;
+
+    try
+    {
+        board = eaglePlugin.LoadBoard( dataPath );
+    }
+    catch( const IO_ERROR& e )
+    {
+        BOOST_FAIL( "IO_ERROR loading Eagle board: " + e.What().ToStdString() );
+    }
+
+    BOOST_REQUIRE( board );
+    BOOST_REQUIRE_EQUAL( board->Footprints().size(), 1u );
+
+    FOOTPRINT* cutout = board->Footprints().front();
+    int        edgeSegmentCount = 0;
+
+    for( BOARD_ITEM* item : cutout->GraphicalItems() )
+    {
+        if( item->Type() != PCB_SHAPE_T )
+            continue;
+
+        PCB_SHAPE* shape = static_cast<PCB_SHAPE*>( item );
+
+        if( shape->GetLayer() == Edge_Cuts && shape->GetShape() == SHAPE_T::SEGMENT )
+            edgeSegmentCount++;
+    }
+
+    BOOST_CHECK_EQUAL( edgeSegmentCount, 4 );
+}
+
+
+/**
  * Verify that text justification is correct after importing an Eagle board with rotated
  * footprints and silkscreen text annotations.
  *

@@ -226,7 +226,7 @@ private:
      * Get the default KiCad layer corresponding to an Eagle layer of the board,
      * a set of sensible layer mapping options and required flag
      *
-     * @note The Eagle MILLING, TTEST, BTEST, and HOLES layers are set to #UNDEFINED_LAYER
+     * @note The Eagle TTEST, BTEST, and HOLES layers are set to #UNDEFINED_LAYER
      *       for historical purposes.  All other Eagle layers that do not directly map to
      *       KiCad layers will be set to #UNDEFINED_LAYER when loading Eagle footprint
      *       libraries.  This should be addressed in the future because in some cases this

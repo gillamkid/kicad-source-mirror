@@ -3028,6 +3028,13 @@ std::tuple<PCB_LAYER_ID, LSET, bool> PCB_IO_EAGLE::defaultKicadLayer( int aEagle
         permittedLayers = LSET( { Edge_Cuts } );
         break;
 
+    // Eagle uses the Milling layer for routed slots and internal board cutouts.
+    case EAGLE_LAYER::MILLING:
+        kiLayer         = Edge_Cuts;
+        required        = true;
+        permittedLayers = LSET( { Edge_Cuts } );
+        break;
+
     case EAGLE_LAYER::TPLACE:
         kiLayer = F_SilkS;
         break;
@@ -3147,7 +3154,6 @@ std::tuple<PCB_LAYER_ID, LSET, bool> PCB_IO_EAGLE::defaultKicadLayer( int aEagle
         kiLayer = B_CrtYd;
         break;
 
-    case EAGLE_LAYER::MILLING:
     case EAGLE_LAYER::TTEST:
     case EAGLE_LAYER::BTEST:
     case EAGLE_LAYER::HOLES:
