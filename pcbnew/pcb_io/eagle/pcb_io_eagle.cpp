@@ -245,6 +245,47 @@ void PCB_IO_EAGLE::setKeepoutSettingsToZone( ZONE* aZone, int aLayer ) const
 }
 
 
+void PCB_IO_EAGLE::addWireKeepout( BOARD_ITEM_CONTAINER* aParent, const EWIRE& aWire ) const
+{
+    int width = aWire.width.ToPcbUnits();
+
+    if( width <= 0 )
+        return;
+
+    VECTOR2I  start( kicad_x( aWire.x1 ), kicad_y( aWire.y1 ) );
+    VECTOR2I  end( kicad_x( aWire.x2 ), kicad_y( aWire.y2 ) );
+    PCB_SHAPE wireShape( aParent );
+
+    if( aWire.curve.has_value() )
+    {
+        wireShape.SetShape( SHAPE_T::ARC );
+        wireShape.SetCenter( ConvertArcCenter( start, end, aWire.curve.value() ) );
+        wireShape.SetStart( start );
+        wireShape.SetArcAngleAndEnd( -EDA_ANGLE( aWire.curve.value(), DEGREES_T ), true );
+    }
+    else
+    {
+        wireShape.SetShape( SHAPE_T::SEGMENT );
+        wireShape.SetStart( start );
+        wireShape.SetEnd( end );
+    }
+
+    wireShape.SetStroke( STROKE_PARAMS( width, LINE_STYLE::SOLID ) );
+
+    auto outline = std::make_unique<SHAPE_POLY_SET>();
+    wireShape.TransformShapeToPolygon( *outline, UNDEFINED_LAYER, 0, ARC_HIGH_DEF, ERROR_OUTSIDE );
+
+    if( outline->OutlineCount() == 0 )
+        return;
+
+    ZONE* zone = new ZONE( aParent );
+    setKeepoutSettingsToZone( zone, aWire.layer );
+    zone->SetOutline( outline.release() );
+    zone->SetBorderDisplayStyle( ZONE_BORDER_DISPLAY_STYLE::DIAGONAL_EDGE, ZONE::GetDefaultHatchPitch(), true );
+    aParent->Add( zone, ADD_MODE::APPEND );
+}
+
+
 void ERULES::parse( wxXmlNode* aRules, std::function<void()> aCheckpoint )
 {
     wxXmlNode* child = aRules->GetChildren();
@@ -876,6 +917,8 @@ void PCB_IO_EAGLE::loadPlain( wxXmlNode* aGraphics )
 
             EWIRE        w( gr );
             PCB_LAYER_ID layer = kicad_layer( w.layer );
+            bool         keepout = ( w.layer == EAGLE_LAYER::TRESTRICT || w.layer == EAGLE_LAYER::BRESTRICT
+                             || w.layer == EAGLE_LAYER::VRESTRICT );
 
             if( w.layer == EAGLE_LAYER::MILLING && layer == Dwgs_User && closedMillingWires.contains( gr ) )
             {
@@ -885,7 +928,11 @@ void PCB_IO_EAGLE::loadPlain( wxXmlNode* aGraphics )
             VECTOR2I start( kicad_x( w.x1 ), kicad_y( w.y1 ) );
             VECTOR2I end( kicad_x( w.x2 ), kicad_y( w.y2 ) );
 
-            if( layer != UNDEFINED_LAYER )
+            if( keepout )
+            {
+                addWireKeepout( m_board, w );
+            }
+            else if( layer != UNDEFINED_LAYER )
             {
                 PCB_SHAPE* shape = new PCB_SHAPE( m_board );
                 int        width = w.width.ToPcbUnits();
@@ -1992,6 +2039,13 @@ FOOTPRINT* PCB_IO_EAGLE::makeFootprint( wxXmlNode* aPackage, const wxString& aPk
 void PCB_IO_EAGLE::packageWire( FOOTPRINT* aFootprint, wxXmlNode* aTree, bool aClosedMillingContour ) const
 {
     EWIRE        w( aTree );
+
+    if( w.layer == EAGLE_LAYER::TRESTRICT || w.layer == EAGLE_LAYER::BRESTRICT || w.layer == EAGLE_LAYER::VRESTRICT )
+    {
+        addWireKeepout( aFootprint, w );
+        return;
+    }
+
     PCB_LAYER_ID layer = kicad_layer( w.layer );
     VECTOR2I     start( kicad_x( w.x1 ), kicad_y( w.y1 ) );
     VECTOR2I     end( kicad_x( w.x2 ), kicad_y( w.y2 ) );

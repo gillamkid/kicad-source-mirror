@@ -38,6 +38,7 @@
 class PAD;
 class PCB_TEXT;
 class ZONE;
+class BOARD_ITEM_CONTAINER;
 
 typedef std::map<wxString, FOOTPRINT*> FOOTPRINT_MAP;
 typedef std::vector<ZONE*>             ZONES;
@@ -249,6 +250,7 @@ private:
     int eagle_layer_id( const wxString& aLayerName ) const;
 
     void setKeepoutSettingsToZone( ZONE* aZone, int aLayer ) const;
+    void addWireKeepout( BOARD_ITEM_CONTAINER* aParent, const EWIRE& aWire ) const;
 
     /// This PLUGIN only caches one footprint library, this determines which one.
     void cacheLib( const wxString& aLibraryPath );

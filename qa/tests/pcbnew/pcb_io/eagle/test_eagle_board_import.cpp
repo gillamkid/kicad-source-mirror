@@ -34,6 +34,7 @@
 #include <netinfo.h>
 #include <pcb_text.h>
 #include <pcb_track.h>
+#include <zone.h>
 #include <geometry/shape_poly_set.h>
 
 #include <map>
@@ -204,6 +205,80 @@ BOOST_AUTO_TEST_CASE( MillingGeometryClassification )
     BOOST_REQUIRE( board->GetBoardPolygonOutlines( boardOutline, false ) );
     BOOST_REQUIRE_EQUAL( boardOutline.OutlineCount(), 1 );
     BOOST_CHECK_EQUAL( boardOutline.HoleCount( 0 ), 2 );
+}
+
+
+/**
+ * Verify that Eagle wire primitives on copper- and via-restrict layers become
+ * rule areas with the correct geometry and restrictions.
+ */
+BOOST_AUTO_TEST_CASE( RestrictWireKeepouts )
+{
+    std::string dataPath = KI_TEST::GetPcbnewTestDataDir() + "plugins/eagle/restrict_wires.brd";
+
+    BOOST_REQUIRE_MESSAGE( wxFileName::FileExists( dataPath ), "Test board file not found: " + dataPath );
+
+    PCB_IO_EAGLE           eaglePlugin;
+    std::unique_ptr<BOARD> board;
+
+    try
+    {
+        board = eaglePlugin.LoadBoard( dataPath );
+    }
+    catch( const IO_ERROR& e )
+    {
+        BOOST_FAIL( "IO_ERROR loading Eagle board: " + e.What().ToStdString() );
+    }
+
+    BOOST_REQUIRE( board );
+    BOOST_REQUIRE_EQUAL( board->Footprints().size(), 1u );
+
+    auto checkKeepouts = []( const std::vector<ZONE*>& aZones, int aExpectedFrontKeepouts )
+    {
+        BOOST_REQUIRE_EQUAL( aZones.size(), static_cast<size_t>( aExpectedFrontKeepouts + 2 ) );
+
+        int frontKeepouts = 0;
+        int backKeepouts = 0;
+        int viaKeepouts = 0;
+
+        for( const ZONE* zone : aZones )
+        {
+            BOOST_CHECK( zone->GetIsRuleArea() );
+            BOOST_CHECK_GT( zone->Outline()->TotalVertices(), 3 );
+
+            if( zone->GetLayerSet() == LSET( { F_Cu } ) )
+            {
+                frontKeepouts++;
+                BOOST_CHECK( zone->GetDoNotAllowZoneFills() );
+                BOOST_CHECK( zone->GetDoNotAllowTracks() );
+                BOOST_CHECK( zone->GetDoNotAllowPads() );
+            }
+            else if( zone->GetLayerSet() == LSET( { B_Cu } ) )
+            {
+                backKeepouts++;
+                BOOST_CHECK( zone->GetDoNotAllowZoneFills() );
+                BOOST_CHECK( zone->GetDoNotAllowTracks() );
+                BOOST_CHECK( zone->GetDoNotAllowPads() );
+            }
+            else if( zone->GetLayerSet() == LSET::AllCuMask() )
+            {
+                viaKeepouts++;
+                BOOST_CHECK( zone->GetDoNotAllowVias() );
+                BOOST_CHECK( !zone->GetDoNotAllowZoneFills() );
+                BOOST_CHECK( !zone->GetDoNotAllowTracks() );
+                BOOST_CHECK( !zone->GetDoNotAllowPads() );
+            }
+        }
+
+        BOOST_CHECK_EQUAL( frontKeepouts, aExpectedFrontKeepouts );
+        BOOST_CHECK_EQUAL( backKeepouts, 1 );
+        BOOST_CHECK_EQUAL( viaKeepouts, 1 );
+    };
+
+    // Exercise wires in the board's plain section and in a package. The package's
+    // four curved tRestrict wires reproduce the fiducial geometry that exposed the bug.
+    checkKeepouts( board->Zones(), 1 );
+    checkKeepouts( board->Footprints().front()->Zones(), 4 );
 }
 
 
