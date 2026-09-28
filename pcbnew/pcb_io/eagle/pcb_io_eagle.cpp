@@ -349,6 +349,8 @@ void ERULES::parse( wxXmlNode* aRules, std::function<void()> aCheckpoint )
                 rlMaxViaOuter = parseEagle( value );
             else if( name == wxT( "mdWireWire" ) )
                 mdWireWire = parseEagle( value );
+            else if( name == wxT( "mdCopperDimension" ) )
+                mdCopperDimension = parseEagle( value );
         }
 
         child = child->GetNext();
@@ -541,6 +543,15 @@ void PCB_IO_EAGLE::loadBoard( const wxString& aFileName, BOARD& aBoard, bool aIs
 
         if( m_rules->mdWireWire )
             bds.m_MinClearance = KiROUND( m_rules->mdWireWire );
+
+        if( m_rules->mdCopperDimension )
+        {
+            bds.m_CopperEdgeClearance = KiROUND( m_rules->mdCopperDimension );
+
+            // Prevent PCB_EDIT_FRAME's legacy post-load handling from replacing the
+            // imported rule with a value inferred from the Edge.Cuts line width.
+            m_board->m_LegacyCopperEdgeClearanceLoaded = true;
+        }
 
         NETCLASS defaults( wxT( "dummy" ) );
 
@@ -1783,15 +1794,17 @@ ZONE* PCB_IO_EAGLE::loadPolygon( wxXmlNode* aPolyNode )
         zone->SetHatchOrientation( ANGLE_0 );
     }
 
-    // We divide the thickness by half because we are tracing _inside_ the zone outline
-    // This means the radius of curvature will be twice the size for an equivalent EAGLE zone
+    // The outline was expanded by half the Eagle pen width above, but the minimum
+    // copper feature width remains the full pen width.
     zone->SetMinThickness( std::max<int>( ZONE_THICKNESS_MIN_VALUE_MM * pcbIUScale.IU_PER_MM,
-                                          p.width.ToPcbUnits() / 2 ) );
+                                          p.width.ToPcbUnits() ) );
 
     if( p.isolate.has_value() )
         zone->SetLocalClearance( p.isolate.value().ToPcbUnits() );
+    else if( m_rules->mdWireWire )
+        zone->SetLocalClearance( KiROUND( m_rules->mdWireWire ) );
     else
-        zone->SetLocalClearance( 1 ); // @todo: set minimum clearance value based on board settings
+        zone->SetLocalClearance( 1 );
 
 
     bool thermals = p.thermals.value_or( true );    // missing == yes per DTD.

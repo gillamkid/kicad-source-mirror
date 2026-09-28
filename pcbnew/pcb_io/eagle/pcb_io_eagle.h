@@ -80,7 +80,8 @@ struct ERULES
         rvViaOuter          ( 0.25 ),
         rlMinViaOuter       ( EDA_UNIT_UTILS::Mils2IU( pcbIUScale,  10 ) ),
         rlMaxViaOuter       ( EDA_UNIT_UTILS::Mils2IU( pcbIUScale,  20 ) ),
-        mdWireWire          ( 0 )
+        mdWireWire          ( 0 ),
+        mdCopperDimension   ( 0 )
     {}
 
     void parse( wxXmlNode* aRules, std::function<void()> aCheckpoint );
@@ -127,6 +128,7 @@ struct ERULES
     double rlMinViaOuter;       ///< minimum copper annulus on via
     double rlMaxViaOuter;       ///< maximum copper annulus on via
     double mdWireWire;          ///< wire to wire spacing I presume.
+    double mdCopperDimension;   ///< copper to board edge spacing.
 };
 
 

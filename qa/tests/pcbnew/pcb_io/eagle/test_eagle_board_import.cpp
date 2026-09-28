@@ -29,6 +29,7 @@
 #include <pcbnew/pcb_io/eagle/pcb_io_eagle.h>
 
 #include <board.h>
+#include <board_design_settings.h>
 #include <footprint.h>
 #include <pcb_shape.h>
 #include <netinfo.h>
@@ -279,6 +280,51 @@ BOOST_AUTO_TEST_CASE( RestrictWireKeepouts )
     // four curved tRestrict wires reproduce the fiducial geometry that exposed the bug.
     checkKeepouts( board->Zones(), 1 );
     checkKeepouts( board->Footprints().front()->Zones(), 4 );
+}
+
+
+/**
+ * Verify that Eagle polygon width and design-rule clearances are retained when
+ * importing copper zones.  These values control narrow copper connectivity and
+ * the size of the gaps left between zone fills and the board edge.
+ */
+BOOST_AUTO_TEST_CASE( CopperZoneDesignRules )
+{
+    std::string dataPath = KI_TEST::GetPcbnewTestDataDir()
+                           + "plugins/eagle/copper_zone_design_rules.brd";
+
+    BOOST_REQUIRE_MESSAGE( wxFileName::FileExists( dataPath ),
+                           "Test board file not found: " + dataPath );
+
+    PCB_IO_EAGLE           eaglePlugin;
+    std::unique_ptr<BOARD> board;
+
+    try
+    {
+        board = eaglePlugin.LoadBoard( dataPath );
+    }
+    catch( const IO_ERROR& e )
+    {
+        BOOST_FAIL( "IO_ERROR loading Eagle board: " + e.What().ToStdString() );
+    }
+
+    BOOST_REQUIRE( board );
+
+    // mdCopperDimension is Eagle's copper-to-Dimension-layer clearance rule.
+    BOOST_CHECK_EQUAL( board->GetDesignSettings().m_CopperEdgeClearance,
+                       pcbIUScale.mmToIU( 0.254 ) );
+    BOOST_CHECK( board->m_LegacyCopperEdgeClearanceLoaded );
+
+    BOOST_REQUIRE_EQUAL( board->Zones().size(), 1u );
+    const ZONE* copperZone = board->Zones().front();
+
+    BOOST_CHECK( !copperZone->GetIsRuleArea() );
+
+    // The imported minimum feature width is the Eagle polygon's full pen width,
+    // while a polygon without an explicit isolate value inherits mdWireWire.
+    BOOST_CHECK_EQUAL( copperZone->GetMinThickness(), pcbIUScale.mmToIU( 0.254 ) );
+    BOOST_REQUIRE( copperZone->GetLocalClearance().has_value() );
+    BOOST_CHECK_EQUAL( *copperZone->GetLocalClearance(), pcbIUScale.mmToIU( 0.2032 ) );
 }
 
 

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE eagle SYSTEM "eagle.dtd">
+<eagle version="9.6.2">
+<drawing>
+<layers>
+<layer number="1" name="Top" color="4" fill="1" visible="yes" active="yes"/>
+<layer number="16" name="Bottom" color="1" fill="1" visible="yes" active="yes"/>
+<layer number="20" name="Dimension" color="15" fill="1" visible="yes" active="yes"/>
+</layers>
+<board>
+<plain>
+<wire x1="0" y1="0" x2="20" y2="0" width="0" layer="20"/>
+<wire x1="20" y1="0" x2="20" y2="20" width="0" layer="20"/>
+<wire x1="20" y1="20" x2="0" y2="20" width="0" layer="20"/>
+<wire x1="0" y1="20" x2="0" y2="0" width="0" layer="20"/>
+</plain>
+<libraries/>
+<classes>
+<class number="0" name="default" width="0" drill="0"/>
+</classes>
+<designrules name="test-rules">
+<param name="mdWireWire" value="8mil"/>
+<param name="mdCopperDimension" value="10mil"/>
+</designrules>
+<elements/>
+<signals>
+<signal name="GND">
+<polygon width="0.254" layer="1">
+<vertex x="19" y="19"/>
+<vertex x="1" y="19"/>
+<vertex x="1" y="1"/>
+<vertex x="19" y="1"/>
+</polygon>
+</signal>
+</signals>
+</board>
+</drawing>
+</eagle>
